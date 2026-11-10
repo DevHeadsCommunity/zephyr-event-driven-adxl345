@@ -1,0 +1,148 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+env:
+  ZEPHYR_REV: e17d4c6c86af49eb5df739f8b991f9165990881c
+
+jobs:
+  west:
+    name: Check west manifest
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          path: zephyr-event-driven-adxl345
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install west
+        run: pip install west
+
+      - name: west init + update
+        run: |
+          west init -l zephyr-event-driven-adxl345
+          west update --narrow -o=--depth=1
+
+      - name: Validate manifest
+        run: west manifest --validate
+
+      - name: Check fetched projects
+        run: |
+          west list -f "{name} {sha}" | tee projects.txt
+          expected="cmsis_6 hal_microchip hal_nordic hal_stm32 manifest zephyr"
+          actual=$(awk '{print $1}' projects.txt | sort | xargs)
+          if [ "$actual" != "$expected" ]; then
+            echo "::error::Expected projects: $expected"
+            echo "::error::Got:               $actual"
+            exit 1
+          fi
+          zsha=$(awk '$1=="zephyr"{print $2}' projects.txt)
+          if [ "$zsha" != "$ZEPHYR_REV" ]; then
+            echo "::error::Zephyr is at $zsha, expected $ZEPHYR_REV"
+            exit 1
+          fi
+          echo "::notice::west.yml OK: Zephyr $ZEPHYR_REV + 4 modules"
+
+  build:
+    name: Build ${{ matrix.name }}
+    needs: west
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: nrf52-dk
+            board: nrf52dk/nrf52832
+            overlay: boards/nrf52-dk/nrf52dk_nrf52832.overlay
+            conf: ""
+            tested_bin: 94a1cada50eb
+          - name: nucleo-c562re
+            board: nucleo_c562re
+            overlay: boards/nucleo-c562re/nucleo_c562re.overlay
+            conf: boards/nucleo-c562re/nucleo_c562re.conf
+            tested_bin: 9a25454798ab
+          - name: pic32cx-sg61
+            board: pic32cx_sg61_cult
+            overlay: boards/pic32-sg61/pic32cx_sg61_cult.overlay
+            conf: boards/pic32-sg61/pic32cx_sg61_cult.conf
+            tested_bin: 0e7fbf3514ca
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          path: zephyr-event-driven-adxl345
+
+      - name: Set up Zephyr
+        uses: zephyrproject-rtos/action-zephyr-setup@v1
+        with:
+          app-path: zephyr-event-driven-adxl345
+          toolchains: arm-zephyr-eabi
+          sdk-version: 1.0.1
+
+      - name: Build
+        run: |
+          EXTRA="-DEXTRA_DTC_OVERLAY_FILE=${{ matrix.overlay }}"
+          if [ -n "${{ matrix.conf }}" ]; then
+            EXTRA="$EXTRA -DEXTRA_CONF_FILE=${{ matrix.conf }}"
+          fi
+          west build -p always -b ${{ matrix.board }} -d build \
+            zephyr-event-driven-adxl345/demos/adxl345-event -- $EXTRA
+
+      - name: Check board files were used
+        run: |
+          grep -q "ecw,adxl345-burst" build/zephyr/zephyr.dts \
+            || { echo "::error::Overlay not applied: no adxl345 node in devicetree"; exit 1; }
+          echo "::notice::Overlay applied (adxl345 node present)"
+
+      - name: Collect images
+        run: |
+          mkdir out
+          cp build/zephyr/zephyr.hex out/adxl345_event-${{ matrix.name }}.hex
+          cp build/zephyr/zephyr.bin out/adxl345_event-${{ matrix.name }}.bin
+          cd out && sha256sum * | tee sha256-${{ matrix.name }}.txt
+
+      - name: Compare with tested image
+        run: |
+          got=$(sha256sum out/adxl345_event-${{ matrix.name }}.bin | cut -c1-12)
+          if [ "$got" = "${{ matrix.tested_bin }}" ]; then
+            echo "::notice::${{ matrix.name }}: identical to the tested image ($got)"
+          else
+            echo "::warning::${{ matrix.name }}: bin $got differs from tested ${{ matrix.tested_bin }}"
+          fi
+
+      - name: Upload images
+        uses: actions/upload-artifact@v4
+        with:
+          name: adxl345_event-${{ matrix.name }}
+          path: out/
+
+  release:
+    name: Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download images
+        uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: out/*
+          generate_release_notes: true
