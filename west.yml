@@ -1,0 +1,18 @@
+manifest:
+  self:
+    path: zephyr-event-driven-adxl345
+
+  remotes:
+    - name: zephyrproject-rtos
+      url-base: https://github.com/zephyrproject-rtos
+
+  projects:
+    - name: zephyr
+      remote: zephyrproject-rtos
+      revision: e17d4c6c86af49eb5df739f8b991f9165990881c   # Zephyr version tested on hardware
+      import:
+        name-allowlist:
+          - cmsis_6
+          - hal_nordic
+          - hal_stm32
+          - hal_microchip
