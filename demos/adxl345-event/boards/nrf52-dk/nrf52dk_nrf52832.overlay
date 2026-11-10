@@ -1,0 +1,36 @@
+/*
+ * nRF52 DK (PCA10040) with the ECW emulated ADXL345 sensor (HIL) on the Arduino header.
+ *
+ * Wiring uses the board's default Arduino SPI pins:
+ *   SCK  P0.25 (D13)
+ *   MOSI P0.23 (D11, MCU out)
+ *   MISO P0.24 (D12, MCU in)
+ *   CS   P0.22 (D10)
+ *
+ * We switch the bus from the legacy SPI peripheral to SPIM (with EasyDMA). With the
+ * legacy driver, CS goes back high as soon as an async transfer starts, so every burst
+ * would come back wrong. SPIM holds CS low until the transfer really ends.
+ *
+ * About nRF52832 anomaly 58 (an extra byte on 1-byte transfers): Zephyr already enables
+ * the workaround by default, and this driver never sends 1-byte transfers anyway.
+ */
+/ {
+	aliases {
+		accel0 = &ecw_adxl345;
+	};
+};
+
+&arduino_spi {
+	compatible = "nordic,nrf-spim";
+	status = "okay";
+
+	ecw_adxl345: adxl345@0 {
+		compatible = "ecw,adxl345-burst";
+		reg = <0>;
+		spi-max-frequency = <125000>;		/* ~125 kHz */
+		spi-cs-setup-delay-ns = <2000>;		/* CS low, then 2 us */
+		spi-cs-hold-delay-ns = <2000>;		/* 2 us, then CS high */
+		sampling-frequency = <100>;
+		fifo-watermark = <10>;
+	};
+};

@@ -1,0 +1,67 @@
+/*
+ * PIC32CX SG61 Curiosity Ultra with the ECW emulated ADXL345 sensor (HIL).
+ *
+ * Careful: on this board MOSI and MISO are swapped compared to the silkscreen.
+ * From the MCU's point of view:
+ *   SCK  PB25 (D13, SERCOM0 PAD1)
+ *   MOSI PC25 (D12, SERCOM0 PAD3, MCU out)
+ *   MISO PB24 (D11, SERCOM0 PAD0, MCU in)
+ *   CS   PC17 (D10, plain GPIO)
+ *
+ * SPI transfers go through the DMA controller.
+ */
+#include <zephyr/dt-bindings/clock/mchp_sam_d5x_e5x_clock.h>
+
+/ {
+	aliases {
+		accel0 = &ecw_adxl345;
+	};
+};
+
+&pinctrl {
+	sercom0_spi_ecw: sercom0_spi_ecw {
+		group1 {
+			pinmux = <PB24C_SERCOM0_PAD0>,
+				 <PB25C_SERCOM0_PAD1>,
+				 <PC25C_SERCOM0_PAD3>;
+		};
+	};
+};
+
+/*
+ * Run SERCOM0 from GCLK1 (60 MHz) so we can reach 125 kHz (BAUD = 239).
+ * On the default GCLK0 the slowest we could get is about 234 kHz.
+ */
+&gclkperiph {
+	sercom0_core {
+		subsystem = <CLOCK_MCHP_GCLKPERIPH_ID_SERCOM0_CORE>;
+		gclkperiph-src = "gclk1";
+		gclkperiph-en = <1>;
+	};
+};
+
+&sercom0 {
+	compatible = "microchip,sercom-g1-spi";
+	#address-cells = <1>;
+	#size-cells = <0>;
+	dopo = <2>;
+	dipo = <0>;
+	pinctrl-0 = <&sercom0_spi_ecw>;
+	pinctrl-names = "default";
+	cs-gpios = <&portc 17 GPIO_ACTIVE_LOW>;
+	/* Format is <&dmac channel trigger>. SERCOM0 RX is trigger 0x04 and TX is 0x05.
+	 * Channels 10 and 11 are already taken by the board's I2C, so we use 0 and 1. */
+	dmas = <&dmac 0 0x04>, <&dmac 1 0x05>;
+	dma-names = "rx", "tx";
+	status = "okay";
+
+	ecw_adxl345: adxl345@0 {
+		compatible = "ecw,adxl345-burst";
+		reg = <0>;
+		spi-max-frequency = <125000>;		/* ~125 kHz */
+		spi-cs-setup-delay-ns = <2000>;		/* CS low, then 2 us */
+		spi-cs-hold-delay-ns = <2000>;		/* 2 us, then CS high */
+		sampling-frequency = <100>;
+		fifo-watermark = <10>;
+	};
+};

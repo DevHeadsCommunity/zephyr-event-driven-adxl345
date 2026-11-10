@@ -1,0 +1,24 @@
+# Test values for the ECW emulated ADXL345 sensor (HIL), used by the adxl345_event demo.
+# One value per entry: address 3k = X of sample k, 3k+1 = Y, 3k+2 = Z. 256 = 1 g.
+# The number of entries must be 3 x the number of samples.
+# Each burst read returns the next sample, and the list starts over after the last one.
+# To load new data: reflash, then send the values again.
+# Columns: address  value
+
+# --- Test A: flat (1 sample, 3 entries) -> mean z=1000 mg, p-p 0, no MOTION
+0   0
+1   0
+2   256
+
+# --- Test B: spike (2 samples, 6 entries) -> every event: mean z~2500 mg, p-p z=3000 mg, MOTION
+0   0
+1   0
+2   256
+3   0
+4   0
+5   1024
+
+# --- Test C: tilted 30 deg (1 sample, 3 entries) -> mean x=500 z=867 mg, p-p 0, no MOTION
+0   128
+1   0
+2   222

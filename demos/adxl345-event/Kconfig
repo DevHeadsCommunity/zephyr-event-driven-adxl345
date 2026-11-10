@@ -1,0 +1,91 @@
+# The sensor driver ships with the app rather than with Zephyr
+config ADXL345_BURST
+	bool "ADXL345 burst-read sensor with software FIFO watermark trigger"
+	default y
+	depends on DT_HAS_ECW_ADXL345_BURST_ENABLED
+	select SPI
+	select SENSOR
+	help
+	  Sensor driver that samples an ADXL345 with SPI burst reads and raises
+	  SENSOR_TRIG_FIFO_WATERMARK every fifo-watermark samples. Uses the async
+	  SPI API (DMA on most SoCs) when CONFIG_SPI_ASYNC=y.
+
+if ADXL345_BURST
+
+config ADXL345_BURST_FIFO_SIZE
+	int "Software FIFO size in samples"
+	default 32
+	help
+	  Same depth as the ADXL345 hardware FIFO.
+
+config ADXL345_BURST_THREAD_PRIORITY
+	int "Priority of the driver's sampling work queue"
+	default 2
+
+config ADXL345_BURST_THREAD_STACK_SIZE
+	int "Stack size of the driver's sampling work queue"
+	default 1024
+
+config ADXL345_BURST_STARTUP_DELAY_MS
+	int "Delay before the first DEVID read at boot (ms)"
+	default 0
+	range 0 60000
+	help
+	  How long the driver waits (at least 10 ms) before it first talks to
+	  the sensor. The rest of the boot waits too, including the boot banner
+	  and all app output. That helps when the serial terminal connects a few
+	  seconds after reset, or when the emulated sensor needs time to start.
+
+endif
+
+menu "Application"
+
+config APP_MOTION_THRESHOLD_MG
+	int "Peak-to-peak within one batch that counts as motion (mg)"
+	default 500
+
+config APP_MOTION_END_BATCHES
+	int "Quiet batches in a row that end a motion event"
+	default 3
+
+config APP_LED_BLINK_MS
+	int "LED blink length for the start position and orientation changes (ms)"
+	default 100
+	range 0 2000
+	help
+	  The LED stays on for as long as a motion lasts, and blinks this long
+	  for the start position and every orientation change.
+	  0 = no blink, the LED only shows motion.
+
+config APP_STATUS_PERIOD_S
+	int "Seconds between status lines (0 = no status output)"
+	default 5
+	range 0 3600
+
+config APP_PRINT_PERIOD_MS
+	int "Print period for changes (ms)"
+	default 1000
+	range 100 60000
+	help
+	  All application events of one period are collected and printed together on
+	  one line at the end of the period; a period without changes prints nothing.
+	  1000 matches a terminal that refreshes once per second.
+
+config APP_EVENT_DETAILS
+	bool "Print a detailed multi-line block per event instead of one line"
+	help
+	  Default (n): one line per APP_PRINT_PERIOD_MS with every event of that
+	  period, the state and the batch mean on X/Y/Z, plus a one-line status
+	  every APP_STATUS_PERIOD_S.
+	  y: the detailed blocks (why, full batch table, posture, action) and the
+	  multi-line status block.
+
+config APP_LOG_EVERY_BATCH
+	bool "Also print one line per sensor event (debug, noisy)"
+	help
+	  Prints every batch. At 100 Hz / watermark 10 that is 10 lines per second,
+	  which costs far more CPU (UART output) than handling the events.
+
+endmenu
+
+source "Kconfig.zephyr"
